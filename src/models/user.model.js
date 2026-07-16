@@ -19,6 +19,23 @@ const userSchema = new mongoose.Schema(
       default: null,
       select: false,
     },
+    emailVerified: {
+      type: Boolean,
+      default: false,
+    },
+    emailOtpHash: {
+      type: String,
+      default: null,
+      select: false,
+    },
+    emailOtpExpiresAt: {
+      type: Date,
+      default: null,
+    },
+    emailOtpRequestedAt: {
+      type: Date,
+      default: null,
+    },
     photoURL: {
       type: String,
       default: null,
@@ -51,6 +68,7 @@ userSchema.methods.toSafeObject = function toSafeObject() {
     name: this.name,
     email: this.email,
     photoURL: this.photoURL,
+    emailVerified: this.emailVerified,
     firebaseUid: this.firebaseUid,
     authProviders: this.authProviders,
     primaryAuthProvider: this.primaryAuthProvider,

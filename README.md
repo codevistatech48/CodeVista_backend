@@ -11,6 +11,7 @@ This backend provides:
 - Firebase social signin through ID token verification
 - protected profile retrieval
 - MongoDB persistence for user accounts
+- email OTP verification using Resend
 
 ## Project structure
 
@@ -29,6 +30,7 @@ This backend provides:
 - Node.js 18+
 - MongoDB database
 - Firebase project for social authentication
+- Resend account for OTP delivery
 
 ## Setup
 
@@ -44,6 +46,8 @@ This backend provides:
    - FIREBASE_PROJECT_ID=
    - FIREBASE_CLIENT_EMAIL=
    - FIREBASE_PRIVATE_KEY=
+   - RESEND_API_KEY=
+   - RESEND_FROM_EMAIL=
    - PORT=5000
 
 3. Start the server:
@@ -66,6 +70,8 @@ This backend provides:
 | FIREBASE_PROJECT_ID | Optional* | Firebase project id for admin auth |
 | FIREBASE_CLIENT_EMAIL | Optional* | Firebase service account email |
 | FIREBASE_PRIVATE_KEY | Optional* | Firebase service account private key |
+| RESEND_API_KEY | Yes for OTP emails | Resend API key |
+| RESEND_FROM_EMAIL | Yes for OTP emails | Verified sender email in Resend |
 | PORT | No | Server port, default 5000 |
 
 *If Firebase service account credentials are not provided, the app falls back to Google application default credentials.
@@ -77,13 +83,22 @@ This backend provides:
 1. Client sends name, email, and password.
 2. Backend hashes the password with bcrypt.
 3. User is stored in MongoDB.
-4. Backend returns an app JWT and the user profile.
+4. OTP is generated and sent to the registered email using Resend.
+5. Backend returns an app JWT and the user profile.
 
 ### Email/password signin
 
 1. Client sends email and password.
 2. Backend compares the password hash.
-3. Backend returns an app JWT and the user profile.
+3. Backend checks whether the email is verified.
+4. Backend returns an app JWT and the user profile.
+
+### Email OTP verification
+
+1. Client requests an OTP for a registered email.
+2. Backend generates a 6-digit OTP and emails it through Resend.
+3. Client submits the OTP to verify the email.
+4. Backend marks the email as verified when the OTP is valid.
 
 ### Firebase social signin
 
@@ -123,6 +138,23 @@ Request body:
 
 - idToken
 
+### POST /api/auth/request-otp
+
+Sends an OTP to a registered email address.
+
+Request body:
+
+- email
+
+### POST /api/auth/verify-otp
+
+Verifies a previously sent OTP.
+
+Request body:
+
+- email
+- otp
+
 ### GET /api/auth/profile
 
 Returns the current authenticated user's profile.
@@ -136,8 +168,10 @@ Headers:
 Successful auth endpoints return:
 
 - success: true
-- token: app JWT
+- token: app JWT after OTP verification or authenticated sign-in
 - user: profile data
+
+Signup returns a pending-verification response without issuing a token until the OTP is verified.
 
 ## User data model
 
@@ -151,9 +185,14 @@ Stored fields include:
 - authProviders
 - primaryAuthProvider
 - lastLoginAt
+- emailVerified
+- emailOtpHash only for internal verification
+- emailOtpExpiresAt
+- emailOtpRequestedAt
 
 ## Notes
 
 - Passwords are never returned in API responses.
 - Firebase login should be handled on the client using Firebase SDK.
 - The backend only verifies Firebase ID tokens and issues its own JWT for app access.
+- OTP codes expire in 10 minutes.
