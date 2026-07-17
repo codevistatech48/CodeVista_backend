@@ -1,12 +1,16 @@
 const app = require('./app');
+const http = require('http');
 const env = require('./config/env');
 const connectDB = require('./config/db');
+const { initializeSocket } = require('./utils/socket');
 
 async function startServer() {
   try {
     await connectDB();
 
-    app.listen(env.port, () => {
+    const server = http.createServer(app);
+    initializeSocket(server);
+    server.listen(env.port, () => {
       console.log(`Server running on port ${env.port}`);
     });
   } catch (error) {
