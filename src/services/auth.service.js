@@ -303,29 +303,6 @@ async function updateProfile(userId, data) {
 
   return user.toSafeObject();
 }
-async function updateProfile(userId, data) {
-  const user = await User.findById(userId);
-
-  if (!user) {
-    throw new AppError("User not found", 404);
-  }
-
-  user.name = data.name ?.trim() || user.name;
-
-  user.company = data.company ?.trim() || "";
-
-  user.location = data.location ?.trim() || "";
-
-  user.bio = data.bio ?.trim() || ""; 
-  user.github = data.github ?.trim() || "";
-
-  user.linkedin = data.linkedin ?.trim() || "";
-
-  user.website = data.website ?.trim() || "";
-  await user.save();
-
-  return user.toSafeObject();
-}
 
 async function sendVerificationOtp(userOrEmail) {
   const email = typeof userOrEmail === 'string' ? userOrEmail.trim().toLowerCase() : userOrEmail.email;
