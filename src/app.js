@@ -2,15 +2,28 @@ const express = require("express");
 const cors = require("cors");
 
 const authRoutes = require("./routes/auth.routes");
+const adminRoutes = require('./routes/admin.routes');
+const env = require('./config/env');
 const { notFound, errorHandler } = require("./middlewares/errorHandler");
 
 const app = express();
 
+function isAllowedOrigin(origin) {
+  if (!origin || env.corsOrigins.includes(origin)) return true;
+  if (env.nodeEnv === 'development') {
+    return /^https?:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin);
+  }
+  return false;
+}
+
 app.use(
   cors({
-    origin: "http://localhost:5173",
+    origin(origin, callback) {
+      if (isAllowedOrigin(origin)) return callback(null, true);
+      return callback(new Error('Origin is not allowed by CORS'));
+    },
     credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
@@ -26,6 +39,7 @@ app.get("/health", (_req, res) => {
 });
 
 app.use("/api/auth", authRoutes);
+app.use('/api/admin', adminRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

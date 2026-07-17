@@ -1,0 +1,32 @@
+const asyncHandler = require('../utils/asyncHandler');
+const service = require('../services/admin.service');
+
+const send = (res, data, status = 200) => res.status(status).json({ success: true, data });
+const pageData = (result, key) => ({ [key]: result.items, pagination: { page: result.page, limit: result.limit, total: result.total, pages: result.pages } });
+const dashboard = asyncHandler(async (req, res) => send(res, await service.dashboard()));
+const users = asyncHandler(async (req, res) => { const result = await service.listUsers(req.query); send(res, pageData(result, 'users')); });
+const user = asyncHandler(async (req, res) => send(res, { user: await service.getUser(req.params.id) }));
+const updateUser = asyncHandler(async (req, res) => send(res, { user: await service.updateUser(req.params.id, req.body, req.user._id) }));
+const role = asyncHandler(async (req, res) => send(res, { user: await service.changeRole(req.params.id, req.body.role, req.user._id) }));
+const status = asyncHandler(async (req, res) => send(res, { user: await service.changeStatus(req.params.id, req.body.status, req.user._id) }));
+const removeUser = asyncHandler(async (req, res) => { await service.deleteUser(req.params.id, req.user._id); send(res, { message: 'User deleted' }); });
+const srs = asyncHandler(async (req, res) => { const result = await service.listSrs(req.query); send(res, pageData(result, 'srs')); });
+const srsOne = asyncHandler(async (req, res) => send(res, { request: await service.getSrs(req.params.id) }));
+const srsUpdate = asyncHandler(async (req, res) => send(res, { request: await service.updateSrs(req.params.id, req.body, req.user._id) }));
+const srsDelete = asyncHandler(async (req, res) => { await service.deleteSrs(req.params.id, req.user._id); send(res, { message: 'SRS request deleted' }); });
+const resourceList = (resource, key) => asyncHandler(async (req, res) => { const result = await service.listResource(resource, req.query); send(res, pageData(result, key)); });
+const resourceCreate = (resource, key) => asyncHandler(async (req, res) => send(res, { [key]: await service.createResource(resource, req.body, req.user._id) }, 201));
+const resourceUpdate = (resource, key) => asyncHandler(async (req, res) => send(res, { [key]: await service.updateResource(resource, req.params.id, req.body, req.user._id) }));
+const resourceDelete = (resource) => asyncHandler(async (req, res) => { await service.deleteResource(resource, req.params.id, req.user._id); send(res, { message: 'Deleted' }); });
+const transactions = asyncHandler(async (req, res) => { const result = await service.transactions(req.query); send(res, pageData(result, 'payments')); });
+const revenue = asyncHandler(async (req, res) => send(res, await service.revenue()));
+const settings = asyncHandler(async (req, res) => send(res, { settings: await service.settings(req.body, req.user._id) }));
+const getSettings = asyncHandler(async (req, res) => send(res, { settings: await service.getSettings() }));
+const analytics = asyncHandler(async (req, res) => send(res, { analytics: await service.analytics() }));
+const notifications = asyncHandler(async (req, res) => send(res, { notifications: await service.notifications(req.user._id) }));
+const readNotification = asyncHandler(async (req, res) => send(res, { notification: await service.markNotification(req.params.id, req.user._id) }));
+const notificationSummary = asyncHandler(async (req, res) => send(res, { notifications: await service.notificationSummary(req.user._id) }));
+const markAllNotificationsRead = asyncHandler(async (req, res) => { await service.markAllNotificationsRead(req.user._id); send(res, {}); });
+const logs = asyncHandler(async (req, res) => send(res, { logs: await service.logs(req.query) }));
+
+module.exports = { dashboard, users, user, updateUser, role, status, removeUser, srs, srsOne, srsUpdate, srsDelete, resourceList, resourceCreate, resourceUpdate, resourceDelete, transactions, revenue, settings, getSettings, analytics, notifications, notificationSummary, readNotification, markAllNotificationsRead, logs };

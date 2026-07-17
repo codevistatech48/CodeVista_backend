@@ -1,0 +1,55 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Firebase OAuth Example</title>
+    <script type="module">
+      import { initializeApp } from 'https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js';
+      import { getAuth, signInWithPopup, GoogleAuthProvider, GithubAuthProvider } from 'https://www.gstatic.com/firebasejs/9.23.0/firebase-auth.js';
+
+      const firebaseConfig = {
+        apiKey: 'AIzaSyAR-GOxjmzLEYU6K89V1CKsKgRRDzSU1bs',
+        authDomain: 'codevista-86a1a.firebaseapp.com',
+        projectId: 'codevista-86a1a',
+        storageBucket: 'codevista-86a1a.firebasestorage.app',
+        messagingSenderId: '227576103044',
+        appId: '1:227576103044:web:4d56f49f07bf7a9c2ac2d1',
+        measurementId: 'G-1XRMGVBXYW'
+      };
+
+      const app = initializeApp(firebaseConfig);
+      const auth = getAuth(app);
+      const API_URL = 'http://localhost:5000';
+
+      async function signIn(provider) {
+        try {
+          const result = await signInWithPopup(auth, provider);
+          const user = result.user;
+          const firebaseIdToken = await user.getIdToken();
+
+          const resp = await fetch(`${API_URL}/api/auth/oauth`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ idToken: firebaseIdToken }),
+          });
+
+          const data = await resp.json();
+          if (!resp.ok) throw new Error(data.message || 'OAuth login failed');
+
+          localStorage.setItem('userToken', data.token);
+          window.location.assign('/dashboard');
+        } catch (err) {
+          alert(err.message);
+        }
+      }
+
+      window.signInWithGoogle = () => signIn(new GoogleAuthProvider());
+      window.signInWithGitHub = () => signIn(new GithubAuthProvider());
+    </script>
+  </head>
+  <body>
+    <h1>Firebase OAuth Example</h1>
+    <button onclick="signInWithGoogle()">Sign in with Google</button>
+    <button onclick="signInWithGitHub()">Sign in with GitHub</button>
+  </body>
+</html>

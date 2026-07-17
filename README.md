@@ -45,7 +45,8 @@ This backend provides:
    - JWT_EXPIRES_IN=7d
    - FIREBASE_PROJECT_ID=
    - FIREBASE_CLIENT_EMAIL=
-   - FIREBASE_PRIVATE_KEY=
+   - FIREBASE_PRIVATE_KEY= (or FIREBASE_SERVICE_ACCOUNT_BASE64=)
+   - CORS_ORIGINS=http://localhost:5173
    - RESEND_API_KEY=
    - RESEND_FROM_EMAIL=
    - PORT=5000
@@ -53,6 +54,10 @@ This backend provides:
 3. Start the server:
 
    - npm run dev
+
+## Firebase OAuth
+
+- See [docs/firebase-oauth.md](docs/firebase-oauth.md) for steps to enable OAuth providers, a client example (`docs/firebase-client.html`), and backend config notes.
 
 ## Scripts
 
@@ -162,6 +167,32 @@ Returns the current authenticated user's profile.
 Headers:
 
 - Authorization: Bearer <app-jwt>
+
+### SRS requests and notifications
+
+Authenticated users can submit one active SRS request:
+
+- `POST /api/auth/srs-requests`
+- `GET /api/auth/srs-requests/status`
+- `GET /api/auth/notifications`
+- `PATCH /api/auth/notifications/read-all`
+
+Admin users (`User.role = "admin"`) review requests with:
+
+- `PATCH /api/auth/admin/srs-requests/:id`
+- Body: `{ "status": "approved|accepted|rejected|expired", "adminNote": "..." }`
+
+The backend emits Socket.IO `notification:new` events. Connect with the application JWT in `socket.handshake.auth.token`; authenticated sockets join a private room named with their user ID. Set `CORS_ORIGINS` to the React origin(s), for example `http://localhost:5173`.
+
+### Admin API
+
+Admin endpoints are mounted under `/api/admin` and require `Authorization: Bearer <app-jwt>` plus a user whose `role` is `admin`. Available groups include dashboard, users, SRS requests, projects, payments, portfolio, blogs, settings, analytics, notifications, and activity logs. Set an administrator explicitly in MongoDB, for example:
+
+```js
+db.users.updateOne({ email: "admin@example.com" }, { $set: { role: "admin" } })
+```
+
+The supported roles are `user`, `admin`, `project_manager`, and `developer`. Configure `MONGODB_URI`, `JWT_SECRET`, `JWT_EXPIRES_IN`, `CORS_ORIGINS`, and `PORT` in `.env`; Socket.IO uses the same CORS origins and JWT secret.
 
 ## Response shape
 

@@ -12,10 +12,14 @@ function errorHandler(err, _req, res, _next) {
     console.error(err);
   }
 
-  res.status(statusCode).json({
+  const response = {
     success: false,
     message,
-  });
+    errors: err.errors || [],
+  };
+
+  if (err.request) response.request = err.request;
+  res.status(statusCode).json(response);
 }
 
 module.exports = { notFound, errorHandler };
