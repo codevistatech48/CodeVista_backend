@@ -35,7 +35,7 @@ const env = {
   firebaseClientEmail: process.env.FIREBASE_CLIENT_EMAIL || '',
   firebasePrivateKey: process.env.FIREBASE_PRIVATE_KEY || '',
   firebaseServiceAccountBase64: process.env.FIREBASE_SERVICE_ACCOUNT_BASE64 || '',
-  corsOrigins: (process.env.CORS_ORIGINS || 'http://localhost:5173').split(',').map((origin) => origin.trim()).filter(Boolean),
+  corsOrigins: (process.env.CORS_ORIGINS || 'https://odevista.vercel.app').split(',').map((origin) => origin.trim()).filter(Boolean),
   adminRateLimitWindowMs: Number(process.env.ADMIN_RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000),
   adminRateLimitMax: Number(process.env.ADMIN_RATE_LIMIT_MAX || 300),
   resendApiKey: process.env.RESEND_API_KEY || '',
