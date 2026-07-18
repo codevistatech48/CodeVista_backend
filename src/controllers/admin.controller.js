@@ -29,4 +29,31 @@ const notificationSummary = asyncHandler(async (req, res) => send(res, { notific
 const markAllNotificationsRead = asyncHandler(async (req, res) => { await service.markAllNotificationsRead(req.user._id); send(res, {}); });
 const logs = asyncHandler(async (req, res) => send(res, { logs: await service.logs(req.query) }));
 
-module.exports = { dashboard, users, user, updateUser, role, status, removeUser, srs, srsOne, srsUpdate, srsDelete, resourceList, resourceCreate, resourceUpdate, resourceDelete, transactions, revenue, settings, getSettings, analytics, notifications, notificationSummary, readNotification, markAllNotificationsRead, logs };
+const projectProgress = asyncHandler(async (req, res) => send(res, { project: await service.updateProjectProgress(req.params.id, req.body, req.user._id) }));
+const projectStatus = asyncHandler(async (req, res) => send(res, { project: await service.updateProjectStatus(req.params.id, req.body, req.user._id) }));
+const downloadSrsPdf = asyncHandler(async (req, res) => {
+  const { filePath, filename } = await service.getSrsPdfPath(req.params.id);
+  res.download(filePath, filename);
+});
+
+// Revision management
+const revisionList = asyncHandler(async (req, res) => {
+  const result = await service.listRevisions(req.query);
+  send(res, pageData(result, 'revisions'));
+});
+const revisionDetail = asyncHandler(async (req, res) => {
+  console.log("Controller params:", req.params);
+  console.log("Controller id:", req.params.id);
+
+  const result = await service.getRevision(
+    req.params.id,
+    req.user._id,
+    true
+  );
+
+  send(res, result);
+});
+const revisionReview = asyncHandler(async (req, res) => send(res, { revision: await service.reviewRevision(req.params.id, req.user._id, req.body) }));
+const revisionCost = asyncHandler(async (req, res) => send(res, { revision: await service.updateRevisionCost(req.params.id, req.user._id, req.body) }));
+
+module.exports = { dashboard, users, user, updateUser, role, status, removeUser, srs, srsOne, srsUpdate, srsDelete, resourceList, resourceCreate, resourceUpdate, resourceDelete, transactions, revenue, settings, getSettings, analytics, notifications, notificationSummary, readNotification, markAllNotificationsRead, logs, projectProgress, projectStatus, downloadSrsPdf, revisionList, revisionDetail, revisionReview, revisionCost };

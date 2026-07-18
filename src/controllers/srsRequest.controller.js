@@ -1,5 +1,7 @@
 const asyncHandler = require('../utils/asyncHandler');
 const srsRequestService = require('../services/srsRequest.service');
+const path = require('path');
+const fs = require('fs');
 
 const createSrsRequest = asyncHandler(async (req, res) => {
   const request = await srsRequestService.createSrsRequest(req.body, req.user._id);
@@ -21,4 +23,9 @@ const review = asyncHandler(async (req, res) => {
   res.json({ success: true, request });
 });
 
-module.exports = { createSrsRequest, getStatus, review };
+const downloadPdf = asyncHandler(async (req, res) => {
+  const request = await srsRequestService.getSrsPdfPath(req.params.id, req.user._id, req.user.role === 'admin');
+  res.download(request.filePath, request.filename);
+});
+
+module.exports = { createSrsRequest, getStatus, review, downloadPdf };

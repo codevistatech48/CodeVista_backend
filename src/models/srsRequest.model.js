@@ -163,6 +163,24 @@ const srsRequestSchema = new mongoose.Schema(
       maxlength: 2000,
     },
 
+    // Revision tracking
+    approvedAt: {
+      type: Date,
+      default: null,
+    },
+    freeRevisionUntil: {
+      type: Date,
+      default: null,
+    },
+    latestRevision: {
+      type: Number,
+      default: 0,
+    },
+    revisionCount: {
+      type: Number,
+      default: 0,
+    },
+
     isDeleted: {
       type: Boolean,
       default: false,

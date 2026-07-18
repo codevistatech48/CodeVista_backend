@@ -33,6 +33,9 @@ router.patch('/admin/srs-requests/:id', authenticate, adminMiddleware, srsReques
 router.get('/notifications', authenticate, notificationController.list);
 router.patch('/notifications/read-all', authenticate, notificationController.markAllRead);
 
+// SRS PDF Download (User can download their own, admin can download any)
+router.get('/srs-requests/:id/download', authenticate, srsRequestController.downloadPdf);
+
 // Password Reset
 router.post("/forgot-password", authController.forgotPassword);
 router.post("/reset-password", authController.resetPassword);

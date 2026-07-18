@@ -20,6 +20,7 @@
     "firebase-admin": "^13.10.0",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^9.7.4",
+    "pdfkit": "^0.19.1",
     "resend": "^6.17.2",
     "socket.io": "^4.8.3"
   },
