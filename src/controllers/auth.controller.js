@@ -94,6 +94,7 @@ const updateProfile = asyncHandler(async (req, res) => {
 // ==========================
 const forgotPassword = asyncHandler(async (req, res) => {
   const result = await authService.forgotPassword(req.body);
+  console.log("Forgot Password Result:", result);
 
   res.status(200).json({
     success: true,

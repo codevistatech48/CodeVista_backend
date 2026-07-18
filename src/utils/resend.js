@@ -18,7 +18,7 @@ function getResendClient() {
 
 async function sendOtpEmail({ to, name, otp }) {
   const client = getResendClient();
-  const from = env.resendFromEmail || "onboarding@resend.dev";
+  const from = env.resendFromEmail || "CodeVista <noreply@codevisions.in>";
 
   const subject = "Your CodeVista OTP Code";
 
@@ -50,6 +50,8 @@ If you didn't request this email, please ignore it.`;
       html,
     });
 
+     console.log("Resend Response:", JSON.stringify(response, null, 2));
+
     // Resend returns 200 with an error field when delivery fails
     if (response?.error) {
       const errMsg = response.error.message || "Unknown Resend error";
@@ -67,10 +69,15 @@ If you didn't request this email, please ignore it.`;
 }
 
 async function sendPasswordResetEmail({ to, name, resetLink }) {
+
   const client = getResendClient();
-  const from = env.resendFromEmail || "onboarding@resend.dev";
+ const from = env.resendFromEmail || "CodeVista <noreply@codevisions.in>";
 
   const subject = "Reset your CodeVista Password";
+
+    console.log("✅ sendPasswordResetEmail called");
+  console.log({ to, name, resetLink });
+
 
   const text = `
 Hello ${name || "there"},
@@ -141,6 +148,8 @@ If you didn't request this, simply ignore this email.
       text,
       html,
     });
+
+    console.log("Resend Response:", JSON.stringify(response, null, 2));
 
     // Resend returns 200 with an error field when delivery fails
     if (response?.error) {

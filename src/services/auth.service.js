@@ -456,6 +456,11 @@ async function forgotPassword({ email, resetUrl }) {
   const normalizedEmail = email.trim().toLowerCase();
 
   const user = await User.findOne({ email: normalizedEmail });
+  console.log("User found:", user);
+
+if (user) {
+  console.log("Primary auth provider:", user.primaryAuthProvider);
+}
 
   // Don't reveal whether the account exists
   if (!user) {
@@ -466,12 +471,9 @@ async function forgotPassword({ email, resetUrl }) {
   }
 
   // Allow only local login users
-  if (user.primaryAuthProvider !== "local") {
-    return {
-      message:
-        "If an account with that email exists, a password reset link has been sent.",
-    };
-  }
+  if (!user.passwordHash) {
+  console.log("Google user is setting a password for the first time.");
+}
 
   // Generate secure token
   const resetToken = crypto.randomBytes(32).toString("hex");
@@ -536,50 +538,90 @@ async function forgotPassword({ email, resetUrl }) {
 // Reset Password
 // ==========================
 async function resetPassword({ email, token, newPassword, password }) {
-  // Support both newPassword and password field names from frontend
+  // Support both field names
   const finalPassword = newPassword || password;
 
   if (!email || !token || !finalPassword) {
-    throw new AppError('Email, token, and new password are required', 400);
+    throw new AppError(
+      "Email, token, and new password are required",
+      400
+    );
   }
 
   if (finalPassword.length < 6) {
-    throw new AppError('Password must be at least 6 characters', 400);
+    throw new AppError(
+      "Password must be at least 6 characters",
+      400
+    );
   }
 
   const normalizedEmail = email.trim().toLowerCase();
 
-  const user = await User.findOne({ email: normalizedEmail }).select('+passwordResetToken +passwordResetExpires +passwordHash');
+  const user = await User.findOne({
+    email: normalizedEmail,
+  }).select(
+    "+passwordResetToken +passwordResetExpires +passwordHash"
+  );
+
   if (!user) {
-    throw new AppError('Invalid or expired reset token', 400);
+    throw new AppError(
+      "Invalid or expired reset token",
+      400
+    );
   }
 
   if (!user.passwordResetToken || !user.passwordResetExpires) {
-    throw new AppError('Invalid or expired reset token', 400);
+    throw new AppError(
+      "Invalid or expired reset token",
+      400
+    );
   }
 
   if (user.passwordResetExpires.getTime() < Date.now()) {
-    // Clear expired token
     user.passwordResetToken = null;
     user.passwordResetExpires = null;
     await user.save();
-    throw new AppError('Reset token has expired. Please request a new one.', 400);
+
+    throw new AppError(
+      "Reset token has expired. Please request a new one.",
+      400
+    );
   }
 
-  const isValidToken = await bcrypt.compare(token, user.passwordResetToken);
+  const isValidToken = await bcrypt.compare(
+    token,
+    user.passwordResetToken
+  );
+
   if (!isValidToken) {
-    throw new AppError('Invalid or expired reset token', 400);
+    throw new AppError(
+      "Invalid or expired reset token",
+      400
+    );
   }
 
-  // Hash new password and update
+  // Hash the new password
   const passwordHash = await bcrypt.hash(finalPassword, 12);
+
   user.passwordHash = passwordHash;
+
+  // Clear reset token
   user.passwordResetToken = null;
   user.passwordResetExpires = null;
+
+  // Allow login using email/password as well
+  if (!user.authProviders.includes("local")) {
+    user.authProviders.push("local");
+  }
+
+  // Keep existing providers (Google/GitHub) but make local the primary login
+  user.primaryAuthProvider = "local";
+
   await user.save();
 
   return {
-    message: 'Password has been reset successfully. You can now log in with your new password.',
+    message:
+      "Password has been reset successfully. You can now sign in using your email/password or your existing social login.",
   };
 }
 
