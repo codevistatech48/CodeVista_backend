@@ -2,14 +2,41 @@ const { verifyToken } = require('../utils/jwt');
 const AppError = require('../utils/AppError');
 const User = require('../models/user.model');
 
-async function authMiddleware(req, _res, next) {
-  const header = req.headers.authorization;
-
-  if (!header || !header.startsWith('Bearer ')) {
-    return next(new AppError('Authentication required', 401));
+function resolveToken(req) {
+  const header = req.headers?.authorization || req.headers?.Authorization;
+  if (typeof header === 'string' && header.trim()) {
+    const normalized = header.trim();
+    if (normalized.startsWith('Bearer ')) {
+      return normalized.slice(7).trim();
+    }
+    return normalized;
   }
 
-  const token = header.split(' ')[1];
+  const altHeader = req.headers?.['x-auth-token'] || req.headers?.['x-access-token'];
+  if (typeof altHeader === 'string' && altHeader.trim()) {
+    const normalized = altHeader.trim();
+    return normalized.startsWith('Bearer ') ? normalized.slice(7).trim() : normalized;
+  }
+
+  const queryToken = req.query?.token || req.query?.access_token;
+  if (typeof queryToken === 'string' && queryToken.trim()) {
+    const normalized = queryToken.trim();
+    return normalized.startsWith('Bearer ') ? normalized.slice(7).trim() : normalized;
+  }
+
+  if (req.cookies?.token && typeof req.cookies.token === 'string') {
+    return req.cookies.token.trim();
+  }
+
+  return null;
+}
+
+async function authMiddleware(req, _res, next) {
+  const token = resolveToken(req);
+
+  if (!token) {
+    return next(new AppError('Authentication required', 401));
+  }
 
   try {
     const decoded = verifyToken(token);
@@ -26,4 +53,5 @@ async function authMiddleware(req, _res, next) {
   }
 }
 
+authMiddleware.resolveToken = resolveToken;
 module.exports = authMiddleware;
