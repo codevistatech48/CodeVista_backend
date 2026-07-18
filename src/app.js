@@ -3,6 +3,8 @@ const cors = require("cors");
 
 const authRoutes = require("./routes/auth.routes");
 const adminRoutes = require('./routes/admin.routes');
+const dashboardRoutes = require('./routes/dashboard.routes');
+const srsRevisionRoutes = require('./routes/srsRevision.routes');
 const env = require('./config/env');
 const { notFound, errorHandler } = require("./middlewares/errorHandler");
 
@@ -46,6 +48,8 @@ app.get("/debug", (req, res) => {
 
 app.use("/api/auth", authRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/srs', srsRevisionRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

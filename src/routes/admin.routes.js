@@ -45,4 +45,17 @@ router.patch('/notifications/:id/read', controller.readNotification);
 router.patch('/notifications/read-all', controller.markAllNotificationsRead);
 router.get('/activity-logs', controller.logs);
 
+// Project Management (Admin)
+router.patch('/projects/:id/progress', controller.projectProgress);
+router.patch('/projects/:id/status', controller.projectStatus);
+
+// SRS PDF Download (Admin)
+router.get('/srs/:id/download', controller.downloadSrsPdf);
+
+// Revision Management (Admin)
+router.get('/revisions', controller.revisionList);
+router.get('/revisions/:id', controller.revisionDetail);
+router.patch('/revisions/:id/review', controller.revisionReview);
+router.patch('/revisions/:id/cost', controller.revisionCost);
+
 module.exports = router;
