@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const User = require('../models/user.model');
 const PendingSignup = require('../models/pendingSignup.model');
@@ -12,11 +13,13 @@ const {
   generateOtp
 } = require('../utils/otp');
 const {
-  sendOtpEmail
+  sendOtpEmail,
+  sendPasswordResetEmail
 } = require('../utils/resend');
 const { notifyAdmins } = require('./notification.service');
 
 const OTP_EXPIRY_MINUTES = 10;
+const PASSWORD_RESET_EXPIRY_HOURS = 1;
 
 function buildAuthResponse(user, oauthProvider) {
   const safeUser = typeof user.toSafeObject === 'function' ? user.toSafeObject() : user;
@@ -442,6 +445,144 @@ async function requestEmailOtp({
   };
 }
 
+// ==========================
+// Forgot Password
+// ==========================
+async function forgotPassword({ email, resetUrl }) {
+  if (!email) {
+    throw new AppError("Email is required", 400);
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+
+  const user = await User.findOne({ email: normalizedEmail });
+
+  // Don't reveal whether the account exists
+  if (!user) {
+    return {
+      message:
+        "If an account with that email exists, a password reset link has been sent.",
+    };
+  }
+
+  // Allow only local login users
+  if (user.primaryAuthProvider !== "local") {
+    return {
+      message:
+        "If an account with that email exists, a password reset link has been sent.",
+    };
+  }
+
+  // Generate secure token
+  const resetToken = crypto.randomBytes(32).toString("hex");
+  const resetTokenHash = await bcrypt.hash(resetToken, 10);
+
+  const resetExpires = new Date(
+    Date.now() + PASSWORD_RESET_EXPIRY_HOURS * 60 * 60 * 1000
+  );
+
+  user.passwordResetToken = resetTokenHash;
+  user.passwordResetExpires = resetExpires;
+  await user.save();
+
+  // ----------------------------
+  // Build Reset URL Safely
+  // ----------------------------
+
+  const clientUrl =
+    process.env.CLIENT_URL || "http://localhost:5173";
+
+  const baseUrl =
+    resetUrl || `${clientUrl.replace(/\/$/, "")}/reset-password`;
+
+  const url = new URL(baseUrl);
+
+  url.searchParams.set("token", resetToken);
+  url.searchParams.set("email", normalizedEmail);
+
+  const resetLink = url.toString();
+
+  console.log("Generated Reset Link:", resetLink);
+
+  try {
+    const response = await sendPasswordResetEmail({
+      to: normalizedEmail,
+      name: user.name,
+      resetLink,
+    });
+
+    console.log("Resend Response:", response);
+
+    return {
+      message:
+        "If an account with that email exists, a password reset link has been sent.",
+    };
+  } catch (error) {
+    console.error("Resend Error:", error);
+
+    // Remove token if email sending failed
+    user.passwordResetToken = null;
+    user.passwordResetExpires = null;
+    await user.save();
+
+    throw new AppError(
+      "Failed to send password reset email. Please try again later.",
+      502
+    );
+  }
+}
+
+// ==========================
+// Reset Password
+// ==========================
+async function resetPassword({ email, token, newPassword, password }) {
+  // Support both newPassword and password field names from frontend
+  const finalPassword = newPassword || password;
+
+  if (!email || !token || !finalPassword) {
+    throw new AppError('Email, token, and new password are required', 400);
+  }
+
+  if (finalPassword.length < 6) {
+    throw new AppError('Password must be at least 6 characters', 400);
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+
+  const user = await User.findOne({ email: normalizedEmail }).select('+passwordResetToken +passwordResetExpires +passwordHash');
+  if (!user) {
+    throw new AppError('Invalid or expired reset token', 400);
+  }
+
+  if (!user.passwordResetToken || !user.passwordResetExpires) {
+    throw new AppError('Invalid or expired reset token', 400);
+  }
+
+  if (user.passwordResetExpires.getTime() < Date.now()) {
+    // Clear expired token
+    user.passwordResetToken = null;
+    user.passwordResetExpires = null;
+    await user.save();
+    throw new AppError('Reset token has expired. Please request a new one.', 400);
+  }
+
+  const isValidToken = await bcrypt.compare(token, user.passwordResetToken);
+  if (!isValidToken) {
+    throw new AppError('Invalid or expired reset token', 400);
+  }
+
+  // Hash new password and update
+  const passwordHash = await bcrypt.hash(finalPassword, 12);
+  user.passwordHash = passwordHash;
+  user.passwordResetToken = null;
+  user.passwordResetExpires = null;
+  await user.save();
+
+  return {
+    message: 'Password has been reset successfully. You can now log in with your new password.',
+  };
+}
+
 module.exports = {
   signup,
   signin,
@@ -450,4 +591,6 @@ module.exports = {
   updateProfile,
   requestEmailOtp,
   verifyEmailOtp,
+  forgotPassword,
+  resetPassword,
 };
