@@ -33,4 +33,8 @@ router.patch('/admin/srs-requests/:id', authenticate, adminMiddleware, srsReques
 router.get('/notifications', authenticate, notificationController.list);
 router.patch('/notifications/read-all', authenticate, notificationController.markAllRead);
 
+// Password Reset
+router.post("/forgot-password", authController.forgotPassword);
+router.post("/reset-password", authController.resetPassword);
+
 module.exports = router;

@@ -121,6 +121,21 @@ const userSchema = new mongoose.Schema(
     },
 
     // ----------------------------
+    // Password Reset
+    // ----------------------------
+    passwordResetToken: {
+      type: String,
+      default: null,
+      select: false,
+    },
+
+    passwordResetExpires: {
+      type: Date,
+      default: null,
+      select: false,
+    },
+
+    // ----------------------------
     // Activity
     // ----------------------------
     lastLoginAt: {

@@ -89,6 +89,30 @@ const updateProfile = asyncHandler(async (req, res) => {
   });
 });
 
+// ==========================
+// Forgot Password - Request reset link
+// ==========================
+const forgotPassword = asyncHandler(async (req, res) => {
+  const result = await authService.forgotPassword(req.body);
+
+  res.status(200).json({
+    success: true,
+    ...result,
+  });
+});
+
+// ==========================
+// Reset Password - Use token to set new password
+// ==========================
+const resetPassword = asyncHandler(async (req, res) => {
+  const result = await authService.resetPassword(req.body);
+
+  res.status(200).json({
+    success: true,
+    ...result,
+  });
+});
+
 module.exports = {
   signup,
   signin,
@@ -97,4 +121,6 @@ module.exports = {
   verifyOtp,
   profile,
   updateProfile,
+  forgotPassword,
+  resetPassword,
 };
