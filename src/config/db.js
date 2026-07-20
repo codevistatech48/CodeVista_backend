@@ -10,7 +10,8 @@ async function connectDB() {
     return mongoose.connection;
   }
 
-  await mongoose.connect(env.mongoUri);
+  const dbName = process.env.DB_NAME || 'CodeVistaDb';
+  await mongoose.connect(env.mongoUri, { dbName });
   return mongoose.connection;
 }
 
