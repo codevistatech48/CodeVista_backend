@@ -1,6 +1,7 @@
 const asyncHandler = require("../utils/asyncHandler");
 const authService = require("../services/auth.service");
 
+
 // ==========================
 // Signup
 // ==========================
@@ -114,6 +115,17 @@ const resetPassword = asyncHandler(async (req, res) => {
   });
 });
 
+//feedback submission
+const submitFeedback = asyncHandler(async (req, res) => {
+  const result = await authService.submitFeedback(req.body);
+  console.log('Feedback submitted:', result);
+
+  res.status(201).json({
+    success: true,
+    ...result,
+  });
+});
+
 module.exports = {
   signup,
   signin,
@@ -124,4 +136,5 @@ module.exports = {
   updateProfile,
   forgotPassword,
   resetPassword,
+  submitFeedback,
 };

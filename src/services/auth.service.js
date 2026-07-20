@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const User = require('../models/user.model');
 const PendingSignup = require('../models/pendingSignup.model');
 const AppError = require('../utils/AppError');
+const Feedback = require('../models/feedback.model');
 const {
   signToken
 } = require('../utils/jwt');
@@ -625,6 +626,28 @@ async function resetPassword({ email, token, newPassword, password }) {
   };
 }
 
+// feedback submission
+async function submitFeedback({ name, email, message }) {
+  const trimmedName = name?.trim();
+  const trimmedEmail = email?.trim().toLowerCase();
+  const trimmedMessage = message?.trim();
+
+  if (!trimmedName || !trimmedEmail || !trimmedMessage) {
+    throw new AppError('Name, email, and message are required', 400);
+  }
+
+  const feedback = await Feedback.create({
+    name: trimmedName,
+    email: trimmedEmail,
+    message: trimmedMessage,
+  });
+
+  return {
+    message: 'Thanks — your message has been received.',
+    feedbackId: feedback._id,
+  };
+}
+
 module.exports = {
   signup,
   signin,
@@ -635,4 +658,5 @@ module.exports = {
   verifyEmailOtp,
   forgotPassword,
   resetPassword,
+  submitFeedback,
 };
