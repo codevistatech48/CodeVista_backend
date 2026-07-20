@@ -7,6 +7,7 @@ const feedbackSchema = new mongoose.Schema(
     message: { type: String, required: true, trim: true },
     status: { type: String, enum: ['new', 'reviewed'], default: 'new' },
     submittedAt: { type: Date, default: Date.now },
+    solve : { type: Boolean, default: false },
   },
   {
     timestamps: true,
