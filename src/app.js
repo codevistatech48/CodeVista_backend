@@ -5,11 +5,10 @@ const authRoutes = require("./routes/auth.routes");
 const adminRoutes = require('./routes/admin.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
 const srsRevisionRoutes = require('./routes/srsRevision.routes');
-<<<<<<< HEAD
-const analyticsRoutes = require('./routes/analytics.routes');
-=======
 
->>>>>>> origin/sidd9569
+const analyticsRoutes = require('./routes/analytics.routes');
+
+
 const env = require('./config/env');
 const { notFound, errorHandler } = require("./middlewares/errorHandler");
 
