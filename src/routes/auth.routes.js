@@ -6,6 +6,7 @@ const srsRequestController = require("../controllers/srsRequest.controller");
 const notificationController = require('../controllers/notification.controller');
 const adminMiddleware = require('../middlewares/admin');
 
+
 const router = express.Router();
 
 // Authentication
@@ -39,5 +40,8 @@ router.get('/srs-requests/:id/download', authenticate, srsRequestController.down
 // Password Reset
 router.post("/forgot-password", authController.forgotPassword);
 router.post("/reset-password", authController.resetPassword);
+
+// Feedback
+router.post('/feedback', authController.submitFeedback);
 
 module.exports = router;
