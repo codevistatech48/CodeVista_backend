@@ -56,6 +56,10 @@ router.get('/srs/:id/download', controller.downloadSrsPdf);
 router.get('/revisions', controller.revisionList);
 router.get('/revisions/:id', controller.revisionDetail);
 router.patch('/revisions/:id/review', controller.revisionReview);
+router.patch(
+  "/revisions/:id/workflow-status",
+  controller.revisionWorkflowStatus
+);
 router.patch('/revisions/:id/cost', controller.revisionCost);
 
 module.exports = router;

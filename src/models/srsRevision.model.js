@@ -147,19 +147,10 @@ const srsRevisionSchema = new mongoose.Schema(
       maxlength: 2000,
     },
 
-    /*
-    Only the fields changed by the client.
-    */
-
     requestedChanges: {
       type: mongoose.Schema.Types.Mixed,
       required: true,
     },
-
-    /*
-    Complete SRS before revision.
-    Useful for diff comparison.
-    */
 
     previousSnapshot: {
       type: mongoose.Schema.Types.Mixed,
@@ -178,14 +169,30 @@ const srsRevisionSchema = new mongoose.Schema(
         "pending",
         "under_review",
         "approved",
-        "development",
-        "testing",
-        "completed",
+        "revision_development",
+        "revision_testing",
+        "revision_completed",
+        "ready_for_merge",
         "merged",
         "rejected",
       ],
       default: "pending",
       index: true,
+    },
+
+    // NEW FIELD
+    pausedStatus: {
+      type: String,
+      enum: [
+        "accepted",
+        "planning",
+        "ui_design",
+        "development",
+        "testing",
+        "deployment",
+        "completed",
+      ],
+      default: null,
     },
 
     priority: {

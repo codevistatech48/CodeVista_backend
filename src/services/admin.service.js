@@ -13,6 +13,7 @@ const {
   createNotification,
   notifyAdmins
 } = require('./notification.service');
+const { createActivityLog } = require('./activityLog.service');
 
 const models = {
   projects: Project,
@@ -179,12 +180,18 @@ async function updateUser(id, data, actorId) {
     runValidators: true
   });
   if (!user) throw new AppError('User not found', 404);
-  await ActivityLog.create({
-    actor: actorId,
-    action: 'user.updated',
-    entity: 'User',
-    entityId: user._id
-  });
+  try {
+    await createActivityLog({
+      actorId: actorId,
+      action: 'user.updated',
+      description: `User ${user.name || user.email} updated`,
+      entity: 'User',
+      entityId: user._id,
+      performerRole: 'admin',
+    });
+  } catch (_error) {
+    // Activity logging failure should not fail the request
+  }
   return user.toSafeObject();
 }
 
@@ -202,15 +209,19 @@ async function changeRole(id, role, actorId) {
     new: true,
     runValidators: true
   });
-  await ActivityLog.create({
-    actor: actorId,
-    action: 'user.role_changed',
-    entity: 'User',
-    entityId: user._id,
-    metadata: {
-      role
-    }
-  });
+  try {
+    await createActivityLog({
+      actorId: actorId,
+      action: 'user.role_changed',
+      description: `User role changed to ${role}`,
+      entity: 'User',
+      entityId: user._id,
+      performerRole: 'admin',
+      metadata: { role },
+    });
+  } catch (_error) {
+    // Activity logging failure should not fail the request
+  }
   return user.toSafeObject();
 }
 async function changeStatus(id, status, actorId) {
@@ -222,15 +233,19 @@ async function changeStatus(id, status, actorId) {
     new: true
   });
   if (!user) throw new AppError('User not found', 404);
-  await ActivityLog.create({
-    actor: actorId,
-    action: 'user.status_changed',
-    entity: 'User',
-    entityId: user._id,
-    metadata: {
-      status
-    }
-  });
+  try {
+    await createActivityLog({
+      actorId: actorId,
+      action: 'user.status_changed',
+      description: `User status changed to ${status}`,
+      entity: 'User',
+      entityId: user._id,
+      performerRole: 'admin',
+      metadata: { status },
+    });
+  } catch (_error) {
+    // Activity logging failure should not fail the request
+  }
   if (status === 'suspended') await notifyAdmins({
     title: 'Unusual account activity',
     message: `User ${user.email} was suspended.`,
@@ -263,12 +278,18 @@ async function deleteUser(id, actorId) {
       deletedBy: actorId
     }
   });
-  await ActivityLog.create({
-    actor: actorId,
-    action: 'user.deleted',
-    entity: 'User',
-    entityId: id
-  });
+  try {
+    await createActivityLog({
+      actorId: actorId,
+      action: 'user.deleted',
+      description: `User ${current.name || current.email} deleted`,
+      entity: 'User',
+      entityId: id,
+      performerRole: 'admin',
+    });
+  } catch (_error) {
+    // Activity logging failure should not fail the request
+  }
 }
 
 async function listSrs(query) {
@@ -469,13 +490,20 @@ async function updateSrs(id, data, adminId) {
     }
   }
 
-  await ActivityLog.create({
-    actor: adminId,
-    action: "srs.updated",
-    entity: "SrsRequest",
-    entityId: request._id,
-    metadata: update,
-  });
+  try {
+    await createActivityLog({
+      actorId: adminId,
+      action: "srs.updated",
+      description: `SRS request ${request.projectName} updated`,
+      entity: "SrsRequest",
+      entityId: request._id,
+      projectId: request.projectId || null,
+      performerRole: "admin",
+      metadata: update,
+    });
+  } catch (_error) {
+    // Activity logging failure should not fail the request
+  }
 
   if (update.status) {
     await createNotification({
@@ -541,6 +569,7 @@ async function createResource(resource, data, actorId) {
   return item;
 }
 const STATUS_PROGRESS = {
+  accepted: 0,
   planning: 5,
   ui_design: 20,
   development: 50,
@@ -850,15 +879,20 @@ async function updateProjectProgress(id, data, adminId) {
   });
   if (!project) throw new AppError('Project not found', 404);
 
-  await ActivityLog.create({
-    actor: adminId,
-    action: 'project.progress_updated',
-    entity: 'Project',
-    entityId: project._id,
-    metadata: {
-      progress: update.progress
-    }
-  });
+  try {
+    await createActivityLog({
+      actorId: adminId,
+      action: 'project.progress_updated',
+      description: `Project progress updated to ${update.progress}%`,
+      entity: 'Project',
+      entityId: project._id,
+      projectId: project._id,
+      performerRole: 'admin',
+      metadata: { progress: update.progress },
+    });
+  } catch (_error) {
+    // Activity logging failure should not fail the request
+  }
 
   if (project.user) {
     await createNotification({
@@ -874,109 +908,100 @@ async function updateProjectProgress(id, data, adminId) {
 
 async function updateProjectStatus(id, data, adminId) {
   idOrError(id);
-  if (!data.status) throw new AppError('Status is required', 400);
 
-  const validStatuses = ['planning', 'ui_design', 'development', 'testing', 'deployment', 'completed', 'active', 'cancelled'];
-  if (!validStatuses.includes(data.status)) throw new AppError('Invalid project status', 400);
-
-  const update = {
-    status: data.status,
-    lastUpdated: new Date()
-  };
-
-  // Update timeline if status changed to a known stage
-  const stageMap = {
-    planning: 'planning',
-    ui_design: 'ui_design',
-    development: 'development',
-    testing: 'testing',
-    deployment: 'deployment',
-    completed: 'completed'
-  };
-  if (stageMap[data.status]) {
-    update['timeline.$[elem].status'] = 'completed';
-    update['timeline.$[elem].date'] = new Date();
+  if (!data.status) {
+    throw new AppError("Status is required", 400);
   }
 
-  const project = await Project.findOneAndUpdate({
+  const validStatuses = [
+    "accepted",
+    "planning",
+    "ui_design",
+    "development",
+    "testing",
+    "deployment",
+    "completed",
+    "active",
+    "cancelled",
+  ];
+
+  if (!validStatuses.includes(data.status)) {
+    throw new AppError("Invalid project status", 400);
+  }
+
+  const existingProject = await Project.findOne({
     _id: id,
-    isDeleted: {
-      $ne: true
-    }
-  }, {
-    $set: {
-      status: data.status,
-      lastUpdated: new Date()
-    },
-    ...(data.adminNotes ? {
-      $set: {
-        adminNotes: data.adminNotes
-      }
-    } : {}),
-  }, {
-    new: true,
-    runValidators: true
+    isDeleted: { $ne: true },
   });
-  if (!project) throw new AppError('Project not found', 404);
 
-  // Also update the matching timeline stage to completed
-  if (stageMap[data.status]) {
-    const timeline = project.timeline || [];
-    const updatedTimeline = timeline.map((t) =>
-      t.stage === stageMap[data.status] ? {
-        ...t,
-        status: 'completed',
-        date: new Date()
-      } : t
-    );
-    // If going to completed, mark all previous stages as completed too
-    if (data.status === 'completed') {
-      const stages = ['accepted', 'planning', 'ui_design', 'development', 'testing', 'deployment'];
-      const updatedAll = updatedTimeline.map((t) =>
-        stages.includes(t.stage) ? {
-          ...t,
-          status: 'completed',
-          date: t.date || new Date()
-        } : t
-      );
-      await Project.updateOne({
-        _id: id
-      }, {
-        $set: {
-          timeline: updatedAll
-        }
-      });
-    } else {
-      await Project.updateOne({
-        _id: id
-      }, {
-        $set: {
-          timeline: updatedTimeline
-        }
-      });
-    }
+  if (!existingProject) {
+    throw new AppError("Project not found", 404);
   }
 
-  await ActivityLog.create({
-    actor: adminId,
-    action: 'project.status_updated',
-    entity: 'Project',
-    entityId: project._id,
-    metadata: {
-      status: data.status
+  if (existingProject.workflowMode === "revision") {
+    throw new AppError(
+      "Project status cannot be changed while a revision is active",
+      409
+    );
+  }
+
+  const projectUpdate = {
+    status: data.status,
+    progress: STATUS_PROGRESS[data.status] ?? existingProject.progress,
+    timeline: buildTimeline(
+      data.status,
+      existingProject.timeline || []
+    ),
+    lastUpdated: new Date(),
+  };
+
+  if (data.adminNotes !== undefined) {
+    projectUpdate.adminNotes = data.adminNotes;
+  }
+
+  const project = await Project.findByIdAndUpdate(
+    id,
+    { $set: projectUpdate },
+    {
+      new: true,
+      runValidators: true,
     }
-  });
+  );
+
+  if (!project) {
+    throw new AppError("Project not found", 404);
+  }
+
+  try {
+    await createActivityLog({
+      actorId: adminId,
+      action: "project.status_updated",
+      description: `Project status changed to ${data.status}`,
+      entity: "Project",
+      entityId: project._id,
+      projectId: project._id,
+      performerRole: "admin",
+      metadata: {
+        status: data.status,
+        progress: project.progress,
+      },
+    });
+  } catch (_) {
+    // Ignore activity log failures
+  }
 
   if (project.user) {
     await createNotification({
       userId: project.user,
-      title: 'Project status updated',
-      message: `Your project "${project.projectName || project.name}" status is now ${data.status}.`,
-      type: 'project_update',
+      title: "Project status updated",
+      message: `Your project "${
+        project.projectName || project.name
+      }" status is now ${data.status}.`,
+      type: "project_update",
     }).catch(() => {});
   }
 
-  return Project.findById(project._id);
+  return project;
 }
 
 async function getSrsPdfPath(id) {
@@ -999,7 +1024,16 @@ async function getSrsPdfPath(id) {
   };
 }
 
+updateRevisionWorkflowStatus:
+    srsRevisionService.updateWorkflowStatus,
+
+
 module.exports = {
+   reviewRevision: srsRevisionService.reviewRevision,
+   updateRevisionWorkflowStatus:
+       srsRevisionService.updateWorkflowStatus,
+   updateRevisionCost:
+       srsRevisionService.updateRevisionCost,
   dashboard,
   listUsers,
   getUser,

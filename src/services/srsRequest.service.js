@@ -4,6 +4,7 @@ const Project = require('../models/project.model');
 const AppError = require('../utils/AppError');
 const { createNotification, notifyAdmins } = require('./notification.service');
 const ActivityLog = require('../models/activityLog.model');
+const { createActivityLog } = require('./activityLog.service');
 const path = require('path');
 const fs = require('fs');
 const PDFDocument = require('pdfkit');
@@ -131,11 +132,13 @@ async function createSrsRequest(payload = {}, userId) {
 
     // Log activity for the user
     try {
-      await ActivityLog.create({
-        actor: userId,
+      await createActivityLog({
+        actorId: userId,
         action: 'srs.submitted',
+        description: `SRS request submitted for "${request.projectName}"`,
         entity: 'SrsRequest',
         entityId: request._id,
+        performerRole: 'user',
         metadata: { projectName: request.projectName, status: request.status },
       });
     } catch (_error) {
@@ -414,11 +417,14 @@ async function reviewSrsRequest(
 
         // Log activity for project creation
         try {
-          await ActivityLog.create({
-            actor: request.user,
+          await createActivityLog({
+            actorId: request.user,
             action: 'project.created',
+            description: `Project "${project.projectName}" created from accepted SRS`,
             entity: 'Project',
             entityId: project._id,
+            projectId: project._id,
+            performerRole: 'system',
             metadata: { projectName: project.projectName, srsRequestId: request._id },
           });
         } catch (_error) {

@@ -6,7 +6,7 @@ const projectSchema = new mongoose.Schema({
   description: { type: String, default: '' },
   status: {
     type: String,
-    enum: ['planning', 'active', 'completed', 'cancelled', 'ui_design', 'development', 'testing', 'deployment'],
+    enum: ['accepted', 'planning', 'active', 'completed', 'cancelled', 'ui_design', 'development', 'testing', 'deployment'],
     default: 'planning',
     index: true,
   },
@@ -35,6 +35,18 @@ const projectSchema = new mongoose.Schema({
   }],
   adminNotes: { type: String, default: '', trim: true, maxlength: 5000 },
   lastUpdated: { type: Date, default: Date.now },
+
+  // Revision workflow fields
+  workflowMode: {
+    type: String,
+    enum: ['normal', 'revision'],
+    default: 'normal',
+    index: true,
+  },
+  pausedStatus: {
+    type: String,
+    default: null,
+  },
 }, { timestamps: true });
 
 // Index for faster user-scoped queries
