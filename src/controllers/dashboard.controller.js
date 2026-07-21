@@ -50,9 +50,23 @@ const activity = asyncHandler(async (req, res) => {
   });
 });
 
+// ==========================
+// Project Activity Logs
+// ==========================
+const projectActivity = asyncHandler(async (req, res) => {
+  const isAdmin = req.user.role === 'admin';
+  const data = await dashboardService.getProjectActivityLogs(req.params.id, req.user._id, isAdmin, req.query);
+
+  res.status(200).json({
+    success: true,
+    ...data,
+  });
+});
+
 module.exports = {
   stats,
   projects,
   projectDetails,
   activity,
+  projectActivity,
 };

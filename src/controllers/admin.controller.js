@@ -53,7 +53,18 @@ const revisionDetail = asyncHandler(async (req, res) => {
 
   send(res, result);
 });
+
+const revisionWorkflowStatus = asyncHandler(async (req, res) =>
+  send(res, {
+    revision: await service.updateRevisionWorkflowStatus(
+      req.params.id,
+      req.user._id,
+      req.user.role,
+      req.body
+    ),
+  })
+);
 const revisionReview = asyncHandler(async (req, res) => send(res, { revision: await service.reviewRevision(req.params.id, req.user._id, req.body) }));
 const revisionCost = asyncHandler(async (req, res) => send(res, { revision: await service.updateRevisionCost(req.params.id, req.user._id, req.body) }));
 
-module.exports = { dashboard, users, user, updateUser, role, status, removeUser, srs, srsOne, srsUpdate, srsDelete, resourceList, resourceCreate, resourceUpdate, resourceDelete, transactions, revenue, settings, getSettings, analytics, notifications, notificationSummary, readNotification, markAllNotificationsRead, logs, projectProgress, projectStatus, downloadSrsPdf, revisionList, revisionDetail, revisionReview, revisionCost };
+module.exports = { dashboard, users, user, updateUser, role, status, removeUser, srs, srsOne, srsUpdate, srsDelete, resourceList, resourceCreate, resourceUpdate, resourceDelete, transactions, revenue, settings, getSettings, analytics, notifications, notificationSummary, readNotification, markAllNotificationsRead, logs, projectProgress, projectStatus, downloadSrsPdf, revisionList, revisionDetail, revisionWorkflowStatus, revisionReview, revisionCost };

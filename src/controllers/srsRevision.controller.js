@@ -137,7 +137,8 @@ const assignDeveloper = asyncHandler(async (req, res) => {
 const updateWorkflowStatus = asyncHandler(async (req, res) => {
   const revision = await srsRevisionService.updateWorkflowStatus(
     req.params.revisionId,
-    req.user,
+    req.user._id,
+    req.user.role,
     req.body
   );
 

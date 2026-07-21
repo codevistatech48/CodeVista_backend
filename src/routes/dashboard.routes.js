@@ -11,4 +11,7 @@ router.get('/activity', authenticate, dashboardController.activity);
 // Project details route (accessible from both dashboard and standalone)
 router.get('/projects/:id', authenticate, dashboardController.projectDetails);
 
+// Project activity logs
+router.get('/projects/:id/activity', authenticate, dashboardController.projectActivity);
+
 module.exports = router;

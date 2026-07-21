@@ -12,6 +12,9 @@ const {
   createNotification,
   notifyAdmins,
 } = require("./notification.service");
+const {
+  createActivityLog
+} = require("./activityLog.service");
 
 /*
 |--------------------------------------------------------------------------
@@ -23,12 +26,76 @@ const WORKFLOW_STATUS = {
   PENDING: "pending",
   UNDER_REVIEW: "under_review",
   APPROVED: "approved",
-  DEVELOPMENT: "development",
-  TESTING: "testing",
-  COMPLETED: "completed",
+  REVISION_DEVELOPMENT: "revision_development",
+  REVISION_TESTING: "revision_testing",
+  REVISION_COMPLETED: "revision_completed",
+  READY_FOR_MERGE: "ready_for_merge",
   MERGED: "merged",
   REJECTED: "rejected",
 };
+
+/*
+|--------------------------------------------------------------------------
+| VALID TRANSITIONS
+|--------------------------------------------------------------------------
+| Maps each status to the allowed next statuses.
+| Prevents invalid jumps (e.g. pending → merged).
+*/
+
+const VALID_TRANSITIONS = {
+  [WORKFLOW_STATUS.PENDING]: [
+    WORKFLOW_STATUS.UNDER_REVIEW,
+    WORKFLOW_STATUS.REJECTED,
+  ],
+
+  [WORKFLOW_STATUS.UNDER_REVIEW]: [
+    WORKFLOW_STATUS.PENDING,
+    WORKFLOW_STATUS.APPROVED,
+    WORKFLOW_STATUS.REJECTED,
+  ],
+
+  [WORKFLOW_STATUS.APPROVED]: [
+    WORKFLOW_STATUS.UNDER_REVIEW,
+    WORKFLOW_STATUS.MERGED,
+    WORKFLOW_STATUS.REVISION_DEVELOPMENT,
+  ],
+
+  [WORKFLOW_STATUS.REVISION_DEVELOPMENT]: [
+    WORKFLOW_STATUS.REVISION_TESTING,
+  ],
+
+  [WORKFLOW_STATUS.REVISION_TESTING]: [
+    WORKFLOW_STATUS.REVISION_COMPLETED,
+  ],
+
+  [WORKFLOW_STATUS.REVISION_COMPLETED]: [
+    WORKFLOW_STATUS.READY_FOR_MERGE,
+  ],
+
+  [WORKFLOW_STATUS.READY_FOR_MERGE]: [
+    WORKFLOW_STATUS.MERGED,
+  ],
+
+  [WORKFLOW_STATUS.MERGED]: [],
+
+  [WORKFLOW_STATUS.REJECTED]: [],
+};
+
+/*
+|--------------------------------------------------------------------------
+| PROJECT STAGE ORDER (for resume logic)
+|--------------------------------------------------------------------------
+*/
+
+const PROJECT_STAGES = [
+  "accepted",
+  "planning",
+  "ui_design",
+  "development",
+  "testing",
+  "deployment",
+  "completed",
+];
 
 const COST_STATUS = {
   NOT_REQUIRED: "not_required",
@@ -111,7 +178,8 @@ function sanitizeChanges(changes = {}) {
   }
 
   return output;
-}/*
+}
+/*
 |--------------------------------------------------------------------------
 | CREATE REVISION
 |--------------------------------------------------------------------------
@@ -165,8 +233,9 @@ async function createRevision(srsId, userId, revisionData) {
           WORKFLOW_STATUS.PENDING,
           WORKFLOW_STATUS.UNDER_REVIEW,
           WORKFLOW_STATUS.APPROVED,
-          WORKFLOW_STATUS.DEVELOPMENT,
-          WORKFLOW_STATUS.TESTING,
+          WORKFLOW_STATUS.REVISION_DEVELOPMENT,
+          WORKFLOW_STATUS.REVISION_TESTING,
+          WORKFLOW_STATUS.REVISION_COMPLETED,
         ],
       },
     }).session(session);
@@ -176,6 +245,28 @@ async function createRevision(srsId, userId, revisionData) {
         "There is already an active revision request.",
         409
       );
+    }
+
+    /*
+    -------------------------------------------------------
+    Pause Project For Revision
+    -------------------------------------------------------
+    */
+
+    const project = await Project.findOne({
+      srsRequest: srs._id,
+      isDeleted: {
+        $ne: true
+      },
+    }).session(session);
+
+    if (project) {
+      project.pausedStatus = project.status;
+      project.workflowMode = "revision";
+      project.lastUpdated = new Date();
+      await project.save({
+        session
+      });
     }
 
     /*
@@ -246,80 +337,78 @@ async function createRevision(srsId, userId, revisionData) {
     */
 
     const priority = PRIORITIES.includes(
-      revisionData.priority
-    )
-      ? revisionData.priority
-      : "medium";
-        /*
+        revisionData.priority
+      ) ?
+      revisionData.priority :
+      "medium";
+    /*
     -------------------------------------------------------
     Create Revision
     -------------------------------------------------------
     */
 
-    const revision = await SrsRevision.create(
-      [
-        {
-          originalSrs: srs._id,
+   const revision = await SrsRevision.create(
+  [{
+    originalSrs: srs._id,
 
-          project: srs.projectId || null,
+    project: project ? project._id : null,
 
-          revisionNumber,
+    revisionNumber,
 
-          createdBy: userId,
+    createdBy: userId,
 
-          title:
-            revisionData.title ||
-            `Revision #${revisionNumber}`,
+    title:
+      revisionData.title ||
+      `Revision #${revisionNumber}`,
 
-          changeSummary:
-            revisionData.changeSummary,
+    changeSummary: revisionData.changeSummary,
 
-          requestedChanges,
+    requestedChanges,
 
-          previousSnapshot,
+    previousSnapshot,
 
-          workflowStatus:
-            WORKFLOW_STATUS.PENDING,
+    workflowStatus: WORKFLOW_STATUS.PENDING,
 
-          priority,
+    // NEW
+    pausedStatus: project ? project.status : null,
 
-          isFreeRevision,
+    priority,
 
-          estimatedCost: 0,
+    isFreeRevision,
 
-          approvedCost: 0,
+    estimatedCost: 0,
 
-          costStatus: isFreeRevision
-            ? COST_STATUS.NOT_REQUIRED
-            : COST_STATUS.PENDING,
+    approvedCost: 0,
 
-          attachments:
-            revisionData.attachments || [],
+    costStatus:
+      isFreeRevision
+        ? COST_STATUS.NOT_REQUIRED
+        : COST_STATUS.PENDING,
 
-          comments: [
-            {
-              sender: userId,
-              role: "user",
-              message:
-                revisionData.changeSummary,
-            },
-          ],
+    attachments:
+      revisionData.attachments || [],
 
-          activity: [
-            {
-              action: "Revision Created",
+    comments: [
+      {
+        sender: userId,
+        role: "user",
+        message: revisionData.changeSummary,
+      },
+    ],
 
-              performedBy: userId,
-
-              role: "user",
-
-              description: `Revision #${revisionNumber} submitted.`,
-            },
-          ],
-        },
-      ],
-      { session }
-    );
+    activity: [
+      {
+        action: "Revision Created",
+        performedBy: userId,
+        role: "user",
+        description: `Revision #${revisionNumber} submitted.`,
+      },
+    ],
+  }],
+  {
+    session,
+  }
+);
 
     /*
     -------------------------------------------------------
@@ -332,7 +421,9 @@ async function createRevision(srsId, userId, revisionData) {
 
     srs.latestRevision = revisionNumber;
 
-    await srs.save({ session });
+    await srs.save({
+      session
+    });
 
     /*
     -------------------------------------------------------
@@ -340,28 +431,26 @@ async function createRevision(srsId, userId, revisionData) {
     -------------------------------------------------------
     */
 
-    await ActivityLog.create(
-      [
-        {
-          actor: userId,
-
-          action: "srs.revision.created",
-
-          entity: "SrsRevision",
-
-          entityId: revision[0]._id,
-
-          metadata: {
-            revisionNumber,
-
-            originalSrs: srs._id,
-
-            isFreeRevision,
-          },
+    try {
+      await createActivityLog({
+        actorId: userId,
+        action: "revision.created",
+        description: `Revision #${revisionNumber} submitted for "${srs.projectName}"`,
+        entity: "SrsRevision",
+        entityId: revision[0]._id,
+        projectId: project ? project._id : null,
+        revisionId: revision[0]._id,
+        performerRole: "user",
+        metadata: {
+          revisionNumber,
+          originalSrs: srs._id,
+          isFreeRevision,
+          projectName: srs.projectName,
         },
-      ],
-      { session }
-    );
+      });
+    } catch (_error) {
+      // Activity logging failure should not fail the request
+    }
 
     /*
     -------------------------------------------------------
@@ -398,8 +487,7 @@ async function createRevision(srsId, userId, revisionData) {
 
         title: "Revision Submitted",
 
-        message:
-          "Your revision request has been submitted successfully.",
+        message: "Your revision request has been submitted successfully.",
 
         type: "revision_submitted",
       });
@@ -425,7 +513,8 @@ async function createRevision(srsId, userId, revisionData) {
   } finally {
     session.endSession();
   }
-}/*
+}
+/*
 |--------------------------------------------------------------------------
 | GET ALL REVISIONS OF AN SRS
 |--------------------------------------------------------------------------
@@ -483,8 +572,7 @@ async function getRevisions(
   */
 
   if (query.search) {
-    filter.$or = [
-      {
+    filter.$or = [{
         title: {
           $regex: query.search,
           $options: "i",
@@ -527,30 +615,30 @@ async function getRevisions(
 
     SrsRevision.find(filter)
 
-      .populate(
-        "createdBy",
-        "name email avatar"
-      )
+    .populate(
+      "createdBy",
+      "name email avatar"
+    )
 
-      .populate(
-        "assignedDeveloper",
-        "name email avatar"
-      )
+    .populate(
+      "assignedDeveloper",
+      "name email avatar"
+    )
 
-      .populate(
-        "reviewedBy",
-        "name email"
-      )
+    .populate(
+      "reviewedBy",
+      "name email"
+    )
 
-      .sort({
-        revisionNumber: -1,
-      })
+    .sort({
+      revisionNumber: -1,
+    })
 
-      .skip(skip)
+    .skip(skip)
 
-      .limit(limit)
+    .limit(limit)
 
-      .lean(),
+    .lean(),
 
     SrsRevision.countDocuments(filter),
   ]);
@@ -595,15 +683,15 @@ async function getRevisions(
         stats.approved++;
         break;
 
-      case WORKFLOW_STATUS.DEVELOPMENT:
+      case WORKFLOW_STATUS.REVISION_DEVELOPMENT:
         stats.development++;
         break;
 
-      case WORKFLOW_STATUS.TESTING:
+      case WORKFLOW_STATUS.REVISION_TESTING:
         stats.testing++;
         break;
 
-      case WORKFLOW_STATUS.COMPLETED:
+      case WORKFLOW_STATUS.REVISION_COMPLETED:
         stats.completed++;
         break;
 
@@ -619,7 +707,6 @@ async function getRevisions(
         break;
     }
   });
-
   /*
   -------------------------------------------------------
   Return
@@ -641,7 +728,8 @@ async function getRevisions(
       pages: Math.ceil(total / limit),
     },
   };
-}/*
+}
+/*
 |--------------------------------------------------------------------------
 | GET SINGLE REVISION
 |--------------------------------------------------------------------------
@@ -774,45 +862,71 @@ async function getRevision(
     },
 
     {
-      title: "Admin Review",
+      title: "Under Review",
 
       date: revision.reviewedAt,
 
       user: revision.reviewedBy,
 
-      completed:
-        revision.workflowStatus !==
+      completed: revision.workflowStatus !==
         WORKFLOW_STATUS.PENDING,
     },
 
     {
-      title: "Development",
+      title: "Approved",
+
+      date: revision.approvedAt,
 
       completed: [
-        WORKFLOW_STATUS.DEVELOPMENT,
-        WORKFLOW_STATUS.TESTING,
-        WORKFLOW_STATUS.COMPLETED,
+        WORKFLOW_STATUS.APPROVED,
+        WORKFLOW_STATUS.REVISION_DEVELOPMENT,
+        WORKFLOW_STATUS.REVISION_TESTING,
+        WORKFLOW_STATUS.REVISION_COMPLETED,
+        WORKFLOW_STATUS.READY_FOR_MERGE,
         WORKFLOW_STATUS.MERGED,
       ].includes(revision.workflowStatus),
     },
 
     {
-      title: "Testing",
+      title: "Revision Development",
 
       completed: [
-        WORKFLOW_STATUS.TESTING,
-        WORKFLOW_STATUS.COMPLETED,
+        WORKFLOW_STATUS.REVISION_DEVELOPMENT,
+        WORKFLOW_STATUS.REVISION_TESTING,
+        WORKFLOW_STATUS.REVISION_COMPLETED,
+        WORKFLOW_STATUS.READY_FOR_MERGE,
         WORKFLOW_STATUS.MERGED,
       ].includes(revision.workflowStatus),
     },
 
     {
-      title: "Completed",
+      title: "Revision Testing",
+
+      completed: [
+        WORKFLOW_STATUS.REVISION_TESTING,
+        WORKFLOW_STATUS.REVISION_COMPLETED,
+        WORKFLOW_STATUS.READY_FOR_MERGE,
+        WORKFLOW_STATUS.MERGED,
+      ].includes(revision.workflowStatus),
+    },
+
+    {
+      title: "Revision Completed",
 
       date: revision.completedAt,
 
       completed: [
-        WORKFLOW_STATUS.COMPLETED,
+        WORKFLOW_STATUS.REVISION_COMPLETED,
+        WORKFLOW_STATUS.READY_FOR_MERGE,
+        WORKFLOW_STATUS.MERGED,
+      ].includes(revision.workflowStatus),
+    },
+
+    {
+      title: "Ready For Merge",
+
+      completed: [
+        WORKFLOW_STATUS.READY_FOR_MERGE,
         WORKFLOW_STATUS.MERGED,
       ].includes(revision.workflowStatus),
     },
@@ -824,8 +938,7 @@ async function getRevision(
 
       user: revision.mergedBy,
 
-      completed:
-        revision.workflowStatus ===
+      completed: revision.workflowStatus ===
         WORKFLOW_STATUS.MERGED,
     },
 
@@ -847,7 +960,8 @@ async function getRevision(
 
   };
 
-}/*
+}
+/*
 |--------------------------------------------------------------------------
 | REVIEW REVISION (PART A)
 |--------------------------------------------------------------------------
@@ -894,13 +1008,12 @@ async function reviewRevision(
     -------------------------------------------------------
     Validate Status
     -------------------------------------------------------
+    For the first review step (pending → under_review|rejected),
+    only under_review or rejected are valid.
+    Approval happens in a separate step after under_review.
     */
 
-    const allowedStatus = [
-      WORKFLOW_STATUS.APPROVED,
-      WORKFLOW_STATUS.REJECTED,
-      WORKFLOW_STATUS.UNDER_REVIEW,
-    ];
+    const allowedStatus = VALID_TRANSITIONS[WORKFLOW_STATUS.PENDING];
 
     if (
       !allowedStatus.includes(
@@ -908,7 +1021,7 @@ async function reviewRevision(
       )
     ) {
       throw new AppError(
-        "Invalid workflow status.",
+        `Invalid transition from pending. Allowed: ${allowedStatus.join(", ")}`,
         400
       );
     }
@@ -1001,21 +1114,17 @@ async function reviewRevision(
 
     revision.activity.push({
 
-      action:
-        reviewData.workflowStatus ===
-        WORKFLOW_STATUS.APPROVED
-          ? "Revision Approved"
-          : reviewData.workflowStatus ===
-            WORKFLOW_STATUS.REJECTED
-          ? "Revision Rejected"
-          : "Revision Under Review",
+      action: reviewData.workflowStatus ===
+        WORKFLOW_STATUS.APPROVED ?
+        "Revision Approved" : reviewData.workflowStatus ===
+        WORKFLOW_STATUS.REJECTED ?
+        "Revision Rejected" : "Revision Under Review",
 
       performedBy: admin._id,
 
       role: "admin",
 
-      description:
-        reviewData.reviewComment ||
+      description: reviewData.reviewComment ||
         "",
 
     });
@@ -1036,227 +1145,128 @@ async function reviewRevision(
 
         role: "admin",
 
-        message:
-          reviewData.reviewComment,
+        message: reviewData.reviewComment,
 
       });
 
-    }    /*
+    }
+
+    /*
+    -------------------------------------------------------
+    Sync Project Status
+    -------------------------------------------------------
+    Update the project document to reflect the revision status change
+    */
+
+    /*
+-------------------------------------------------------
+Sync Project Status
+-------------------------------------------------------
+*/
+
+const srsForProject = await SrsRequest.findById(revision.originalSrs).session(session);
+
+if (srsForProject) {
+  const project = await Project.findOne({
+    srsRequest: srsForProject._id,
+    isDeleted: { $ne: true },
+  }).session(session);
+
+  if (project) {
+    switch (reviewData.workflowStatus) {
+      case WORKFLOW_STATUS.UNDER_REVIEW:
+        project.workflowMode = "revision";
+        project.lastUpdated = new Date();
+        break;
+
+      case WORKFLOW_STATUS.APPROVED:
+        project.workflowMode = "revision";
+        project.lastUpdated = new Date();
+        break;
+
+      case WORKFLOW_STATUS.REJECTED:
+        project.status = project.pausedStatus || project.status;
+        project.workflowMode = "normal";
+        project.pausedStatus = null;
+        project.lastUpdated = new Date();
+        break;
+    }
+
+    await project.save({ session });
+  }
+}
+
+    /*
     -------------------------------------------------------
     Save Revision
     -------------------------------------------------------
     */
-
-    await revision.save({ session });
-
-    /*
-    -------------------------------------------------------
-    Apply Changes To Original SRS
-    -------------------------------------------------------
-    */
-
-    if (
-      revision.workflowStatus ===
-      WORKFLOW_STATUS.APPROVED
-    ) {
-
-      Object.entries(
-        revision.requestedChanges || {}
-      ).forEach(([field, value]) => {
-
-        srs[field] = value;
-
-      });
-
-      srs.latestRevision =
-        revision.revisionNumber;
-
-      await srs.save({ session });
-
-      /*
-      -----------------------------------------------------
-      Sync Project
-      -----------------------------------------------------
-      */
-
-      if (revision.project) {
-
-        const project =
-          await Project.findById(
-            revision.project
-          ).session(session);
-
-        if (project) {
-
-          Object.entries(
-            revision.requestedChanges || {}
-          ).forEach(([field, value]) => {
-
-            if (
-              Object.prototype.hasOwnProperty.call(
-                project.toObject(),
-                field
-              )
-            ) {
-
-              project[field] = value;
-
-            }
-
-          });
-
-          project.lastUpdated =
-            new Date();
-
-          if (!project.activity) {
-
-            project.activity = [];
-
-          }
-
-          project.activity.push({
-
-            action:
-              "Revision Approved",
-
-            description:
-              `Revision #${revision.revisionNumber} merged into project.`,
-
-            performedBy:
-              admin._id,
-
-            createdAt:
-              new Date(),
-
-          });
-
-          await project.save({
-            session,
-          });
-
-        }
-
-      }
-
-    }
-
-    /*
-    -------------------------------------------------------
-    Activity Log
-    -------------------------------------------------------
-    */
-
-    await ActivityLog.create(
-      [
-        {
-          actor: admin._id,
-
-          action: `revision.${revision.workflowStatus}`,
-
-          entity: "SrsRevision",
-
-          entityId: revision._id,
-
-          metadata: {
-
-            revisionNumber:
-              revision.revisionNumber,
-
-            workflowStatus:
-              revision.workflowStatus,
-
-            estimatedCost:
-              revision.estimatedCost,
-
-            originalSrs:
-              revision.originalSrs,
-
-          },
-
-        },
-      ],
-      { session }
-    );
-
-    /*
-    -------------------------------------------------------
-    Notify User
-    -------------------------------------------------------
-    */
-
-    try {
-
-      await createNotification({
-
-        userId: srs.user,
-
-        title:
-          revision.workflowStatus ===
-          WORKFLOW_STATUS.APPROVED
-            ? "Revision Approved"
-            : revision.workflowStatus ===
-              WORKFLOW_STATUS.REJECTED
-            ? "Revision Rejected"
-            : "Revision Under Review",
-
-        message:
-          revision.reviewComment ||
-
-          `Revision #${revision.revisionNumber} has been ${revision.workflowStatus}.`,
-
-        type:
-          "revision_review",
-
-      });
-
-    } catch (err) {
-
-      console.error(
-        "Notification Error:",
-        err.message
-      );
-
-    }
-
-    /*
-    -------------------------------------------------------
-    Notify Assigned Developer
-    -------------------------------------------------------
-    */
-
-    if (
-      revision.assignedDeveloper &&
-      revision.workflowStatus ===
-        WORKFLOW_STATUS.APPROVED
-    ) {
-
-      try {
-
-        await createNotification({
-
-          userId:
-            revision.assignedDeveloper,
-
-          title:
-            "New Revision Assigned",
-
-          message:
-            `Revision #${revision.revisionNumber} is ready for development.`,
-
-          type:
-            "revision_assignment",
-
-        });
-
-      } catch (err) {
-
-        console.error(
-          err.message
-        );
-
-      }
-
-    }
+   await revision.save({ session });
+
+   /*
+-------------------------------------------------------
+Activity Log
+-------------------------------------------------------
+*/
+
+try {
+  await createActivityLog({
+    actorId: admin._id,
+    action: `revision.${revision.workflowStatus}`,
+    description: `Revision #${revision.revisionNumber} ${revision.workflowStatus}`,
+    entity: "SrsRevision",
+    entityId: revision._id,
+    projectId: revision.project || null,
+    revisionId: revision._id,
+    performerRole: "admin",
+    metadata: {
+      revisionNumber: revision.revisionNumber,
+      workflowStatus: revision.workflowStatus,
+      estimatedCost: revision.estimatedCost,
+      originalSrs: revision.originalSrs,
+    },
+  });
+} catch (_) {}
+
+/*
+-------------------------------------------------------
+Notify User
+-------------------------------------------------------
+*/
+
+try {
+  await createNotification({
+    userId: srs.user,
+    title:
+      revision.workflowStatus === WORKFLOW_STATUS.UNDER_REVIEW
+        ? "Revision Under Review"
+        : "Revision Rejected",
+    message:
+      revision.reviewComment ||
+      `Revision #${revision.revisionNumber} has been ${revision.workflowStatus}.`,
+    type: "revision_review",
+  });
+} catch (err) {
+  console.error(err.message);
+}
+
+/*
+-------------------------------------------------------
+SAVE REVISION
+-------------------------------------------------------
+*/
+
+await revision.save({ session });
+
+/*
+-------------------------------------------------------
+Commit
+-------------------------------------------------------
+*/
+
+await session.commitTransaction();
+
+return revision;
 
     /*
     -------------------------------------------------------
@@ -1280,7 +1290,8 @@ async function reviewRevision(
 
   }
 
-}/*
+}
+/*
 |--------------------------------------------------------------------------
 | UPDATE REVISION COST
 |--------------------------------------------------------------------------
@@ -1334,9 +1345,9 @@ async function updateRevisionCost(
     revision.estimatedCost = cost;
 
     revision.costStatus =
-      cost === 0
-        ? COST_STATUS.NOT_REQUIRED
-        : COST_STATUS.PENDING;
+      cost === 0 ?
+      COST_STATUS.NOT_REQUIRED :
+      COST_STATUS.PENDING;
 
     /*
     -------------------------------------------------------
@@ -1372,45 +1383,39 @@ async function updateRevisionCost(
 
       role: "admin",
 
-      description:
-        cost === 0
-          ? "Revision marked as free."
-          : `Estimated cost updated to ₹${cost}.`,
+      description: cost === 0 ?
+        "Revision marked as free." : `Estimated cost updated to ₹${cost}.`,
 
     });
 
-    await revision.save({ session });
+    await revision.save({
+      session
+    });
 
     /*
     -------------------------------------------------------
-    Audit Log
+    Activity Log
     -------------------------------------------------------
     */
 
-    await ActivityLog.create(
-      [
-        {
-          actor: admin._id,
-
-          action: "revision.cost.updated",
-
-          entity: "SrsRevision",
-
-          entityId: revision._id,
-
-          metadata: {
-
-            estimatedCost: cost,
-
-            revisionNumber:
-              revision.revisionNumber,
-
-          },
-
+    try {
+      await createActivityLog({
+        actorId: admin._id,
+        action: "revision.cost.updated",
+        description: cost === 0 ? "Revision marked as free" : `Estimated cost updated to ₹${cost}`,
+        entity: "SrsRevision",
+        entityId: revision._id,
+        projectId: revision.project || null,
+        revisionId: revision._id,
+        performerRole: "admin",
+        metadata: {
+          estimatedCost: cost,
+          revisionNumber: revision.revisionNumber,
         },
-      ],
-      { session }
-    );
+      });
+    } catch (_error) {
+      // Activity logging failure should not fail the request
+    }
 
     /*
     -------------------------------------------------------
@@ -1433,10 +1438,8 @@ async function updateRevisionCost(
 
           title: "Revision Cost Updated",
 
-          message:
-            cost === 0
-              ? "Your revision has been marked as free."
-              : `Estimated revision cost is ₹${cost}.`,
+          message: cost === 0 ?
+            "Your revision has been marked as free." : `Estimated revision cost is ₹${cost}.`,
 
           type: "revision_cost",
 
@@ -1475,7 +1478,8 @@ async function updateRevisionCost(
 
   }
 
-}/*
+}
+/*
 |--------------------------------------------------------------------------
 | RESPOND TO COST (USER ACTION)
 |--------------------------------------------------------------------------
@@ -1501,7 +1505,9 @@ async function respondToCost(revisionId, userId, payload) {
       throw new AppError("There is no active pending cost proposal for this revision.", 400);
     }
 
-    const { action } = payload; // expected 'accept' or 'reject'
+    const {
+      action
+    } = payload; // expected 'accept' or 'reject'
     if (!["accept", "reject"].includes(action)) {
       throw new AppError("Invalid cost response action.", 400);
     }
@@ -1522,25 +1528,32 @@ async function respondToCost(revisionId, userId, payload) {
       action: action === "accept" ? "Cost Accepted" : "Cost Rejected",
       performedBy: userId,
       role: "user",
-      description: action === "accept" 
-        ? `User accepted the estimated cost of ₹${revision.estimatedCost}.`
-        : `User rejected the cost estimate. Revision request halted.`,
+      description: action === "accept" ?
+        `User accepted the estimated cost of ₹${revision.estimatedCost}.` : `User rejected the cost estimate. Revision request halted.`,
     });
 
-    await revision.save({ session });
+    await revision.save({
+      session
+    });
 
-    await ActivityLog.create(
-      [
-        {
-          actor: userId,
-          action: `revision.cost.${action}ed`,
-          entity: "SrsRevision",
-          entityId: revision._id,
-          metadata: { revisionNumber: revision.revisionNumber },
+    try {
+      await createActivityLog({
+        actorId: userId,
+        action: `revision.cost.${action}ed`,
+        description: action === "accept" ? `User accepted cost of ₹${revision.estimatedCost}` : "User rejected cost estimate",
+        entity: "SrsRevision",
+        entityId: revision._id,
+        projectId: revision.project || null,
+        revisionId: revision._id,
+        performerRole: "user",
+        metadata: {
+          revisionNumber: revision.revisionNumber,
+          cost: revision.estimatedCost
         },
-      ],
-      { session }
-    );
+      });
+    } catch (_error) {
+      // Activity logging failure should not fail the request
+    }
 
     try {
       await notifyAdmins({
@@ -1580,19 +1593,24 @@ async function assignDeveloper(revisionId, adminId, payload) {
       throw new AppError("Revision not found.", 404);
     }
 
-    const { developerId } = payload;
+    const {
+      developerId
+    } = payload;
     validateObjectId(developerId);
 
-    const developer = await User.findOne({ _id: developerId, role: "developer" }).session(session);
+    const developer = await User.findOne({
+      _id: developerId,
+      role: "developer"
+    }).session(session);
     if (!developer) {
       throw new AppError("Valid target developer account not found.", 404);
     }
 
     revision.assignedDeveloper = developer._id;
-    
+
     // Auto-advance workflow state if it's sitting idle post-approval
-    if ([WORKFLOW_STATUS.PENDING, WORKFLOW_STATUS.APPROVED, WORKFLOW_STATUS.UNDER_REVIEW].includes(revision.workflowStatus)) {
-      revision.workflowStatus = WORKFLOW_STATUS.DEVELOPMENT;
+    if ([WORKFLOW_STATUS.APPROVED].includes(revision.workflowStatus)) {
+      revision.workflowStatus = WORKFLOW_STATUS.REVISION_DEVELOPMENT;
     }
 
     revision.activity.push({
@@ -1602,20 +1620,29 @@ async function assignDeveloper(revisionId, adminId, payload) {
       description: `Assigned task workflow to engineering team: ${developer.name}.`,
     });
 
-    await revision.save({ session });
+    await revision.save({
+      session
+    });
 
-    await ActivityLog.create(
-      [
-        {
-          actor: adminId,
-          action: "revision.developer.assigned",
-          entity: "SrsRevision",
-          entityId: revision._id,
-          metadata: { developerId: developer._id, revisionNumber: revision.revisionNumber },
+    try {
+      await createActivityLog({
+        actorId: adminId,
+        action: "revision.developer.assigned",
+        description: `Developer ${developer.name} assigned to Revision #${revision.revisionNumber}`,
+        entity: "SrsRevision",
+        entityId: revision._id,
+        projectId: revision.project || null,
+        revisionId: revision._id,
+        performerRole: "admin",
+        metadata: {
+          developerId: developer._id,
+          revisionNumber: revision.revisionNumber,
+          developerName: developer.name
         },
-      ],
-      { session }
-    );
+      });
+    } catch (_error) {
+      // Activity logging failure should not fail the request
+    }
 
     try {
       await createNotification({
@@ -1660,16 +1687,36 @@ async function updateWorkflowStatus(revisionId, staffId, role, payload) {
       throw new AppError("You are not the assigned engineer on this revision layout.", 403);
     }
 
-    const { status } = payload;
+    const {
+      status
+    } = payload;
     if (!Object.values(WORKFLOW_STATUS).includes(status)) {
-      throw new AppError("Target step step identifier is not supported within this module engine.", 400);
+      throw new AppError("Invalid workflow status.", 400);
     }
 
+    /*
+    -------------------------------------------------------
+    Validate Transition
+    -------------------------------------------------------
+    */
+
     const pastStatus = revision.workflowStatus;
+    const allowedNext = VALID_TRANSITIONS[pastStatus];
+
+    if (!allowedNext || !allowedNext.includes(status)) {
+      throw new AppError(
+        `Invalid transition from ${pastStatus} to ${status}. Allowed: ${(allowedNext || []).join(", ")}`,
+        400
+      );
+    }
+
     revision.workflowStatus = status;
 
     // Capture lifecycle updates
-    if (status === WORKFLOW_STATUS.COMPLETED && !revision.completedAt) {
+    if (status === WORKFLOW_STATUS.APPROVED && !revision.approvedAt) {
+      revision.approvedAt = new Date();
+    }
+    if (status === WORKFLOW_STATUS.REVISION_COMPLETED && !revision.completedAt) {
       revision.completedAt = new Date();
     }
     if (status === WORKFLOW_STATUS.MERGED && !revision.mergedAt) {
@@ -1684,20 +1731,125 @@ async function updateWorkflowStatus(revisionId, staffId, role, payload) {
       description: `Pipeline phase safely mapped from ${pastStatus} to ${status}.`,
     });
 
-    await revision.save({ session });
+    await revision.save({
+      session
+    });
 
-    await ActivityLog.create(
-      [
-        {
-          actor: staffId,
-          action: `revision.workflow.${status}`,
-          entity: "SrsRevision",
-          entityId: revision._id,
-          metadata: { pastStatus, nextStatus: status },
+    /*
+    -------------------------------------------------------
+    Apply Changes To Original SRS When Approved
+    -------------------------------------------------------
+    */
+
+    if (status === WORKFLOW_STATUS.APPROVED) {
+      const srs = await SrsRequest.findById(revision.originalSrs).session(session);
+      if (srs) {
+        Object.entries(revision.requestedChanges || {}).forEach(([field, value]) => {
+          srs[field] = value;
+        });
+        srs.latestRevision = revision.revisionNumber;
+        await srs.save({
+          session
+        });
+      }
+
+      // Sync project status when revision is approved
+      const project = await Project.findOne({
+        srsRequest: srs._id,
+        isDeleted: {
+          $ne: true
         },
-      ],
-      { session }
-    );
+      }).session(session);
+
+      if (project) {
+        project.workflowMode = "revision";
+        project.lastUpdated = new Date();
+        await project.save({
+          session
+        });
+      }
+    }
+
+    /*
+    -------------------------------------------------------
+    Restore Project When Merged
+    -------------------------------------------------------
+    Return to the paused stage. The admin advances the project manually.
+    */
+
+    if (status === WORKFLOW_STATUS.MERGED) {
+      const srs = await SrsRequest.findById(revision.originalSrs).session(session);
+      if (srs) {
+        const project = await Project.findOne({
+          srsRequest: srs._id,
+          isDeleted: {
+            $ne: true
+          },
+        }).session(session);
+
+        if (project) {
+          project.status = project.pausedStatus || project.status;
+          project.workflowMode = "normal";
+          project.pausedStatus = null;
+          project.lastUpdated = new Date();
+          await project.save({
+            session
+          });
+        }
+      }
+    }
+
+    /*
+    -------------------------------------------------------
+    Restore Project When Rejected
+    -------------------------------------------------------
+    Return to the paused status and normal workflow mode.
+    */
+
+    if (status === WORKFLOW_STATUS.REJECTED) {
+      const srs = await SrsRequest.findById(revision.originalSrs).session(session);
+      if (srs) {
+        const project = await Project.findOne({
+          srsRequest: srs._id,
+          isDeleted: {
+            $ne: true
+          },
+        }).session(session);
+
+        if (project) {
+          // Return to original paused status
+          if (project.pausedStatus) {
+            project.status = project.pausedStatus;
+          }
+          project.workflowMode = "normal";
+          project.pausedStatus = null;
+          project.lastUpdated = new Date();
+          await project.save({
+            session
+          });
+        }
+      }
+    }
+
+    try {
+      await createActivityLog({
+        actorId: staffId,
+        action: `revision.workflow.${status}`,
+        description: `Revision #${revision.revisionNumber} status changed from ${pastStatus} to ${status}`,
+        entity: "SrsRevision",
+        entityId: revision._id,
+        projectId: revision.project || null,
+        revisionId: revision._id,
+        performerRole: role,
+        metadata: {
+          pastStatus,
+          nextStatus: status,
+          revisionNumber: revision.revisionNumber
+        },
+      });
+    } catch (_error) {
+      // Activity logging failure should not fail the request
+    }
 
     // Sync pipeline records downstream to client spaces
     try {
@@ -1725,57 +1877,58 @@ async function updateWorkflowStatus(revisionId, staffId, role, payload) {
 }
 
 async function listAllRevisions(query = {}) {
-    const page = Math.max(Number(query.page) || 1, 1);
-    const limit = Math.max(Number(query.limit) || 20, 1);
-    const skip = (page - 1) * limit;
+  const page = Math.max(Number(query.page) || 1, 1);
+  const limit = Math.max(Number(query.limit) || 20, 1);
+  const skip = (page - 1) * limit;
 
-    const filter = {};
+  const filter = {};
 
-    if (query.workflowStatus && query.workflowStatus !== "all") {
-        filter.workflowStatus = query.workflowStatus;
-    }
+  if (query.workflowStatus && query.workflowStatus !== "all") {
+    filter.workflowStatus = query.workflowStatus;
+  }
 
-    if (query.priority && query.priority !== "all") {
-        filter.priority = query.priority;
-    }
+  if (query.priority && query.priority !== "all") {
+    filter.priority = query.priority;
+  }
 
-    if (query.search) {
-        filter.$or = [
-            {
-                title: {
-                    $regex: query.search,
-                    $options: "i"
-                }
-            },
-            {
-                changeSummary: {
-                    $regex: query.search,
-                    $options: "i"
-                }
-            }
-        ];
-    }
+  if (query.search) {
+    filter.$or = [{
+        title: {
+          $regex: query.search,
+          $options: "i"
+        }
+      },
+      {
+        changeSummary: {
+          $regex: query.search,
+          $options: "i"
+        }
+      }
+    ];
+  }
 
-    const [items, total] = await Promise.all([
-        SrsRevision.find(filter)
-            .populate("createdBy", "name email")
-            .populate("project", "name")
-            .populate("originalSrs", "projectName")
-            .sort({ requestedAt: -1 })
-            .skip(skip)
-            .limit(limit)
-            .lean(),
+  const [items, total] = await Promise.all([
+    SrsRevision.find(filter)
+    .populate("createdBy", "name email")
+    .populate("project", "name")
+    .populate("originalSrs", "projectName")
+    .sort({
+      requestedAt: -1
+    })
+    .skip(skip)
+    .limit(limit)
+    .lean(),
 
-        SrsRevision.countDocuments(filter)
-    ]);
+    SrsRevision.countDocuments(filter)
+  ]);
 
-    return {
-        items,
-        total,
-        page,
-        limit,
-        pages: Math.ceil(total / limit)
-    };
+  return {
+    items,
+    total,
+    page,
+    limit,
+    pages: Math.ceil(total / limit)
+  };
 }
 
 /*
@@ -1803,7 +1956,9 @@ async function addComment(revisionId, userId, role, payload) {
     throw new AppError("Access Denied.", 403);
   }
 
-  const { message } = payload;
+  const {
+    message
+  } = payload;
   if (!message || message.trim().length === 0) {
     throw new AppError("Comment text bodies cannot evaluate as empty text expressions.", 400);
   }
@@ -1843,14 +1998,14 @@ async function addComment(revisionId, userId, role, payload) {
 }
 
 module.exports = {
-    createRevision,
-    getRevisions,
-    listAllRevisions,
-    getRevision,
-    reviewRevision,
-    updateRevisionCost,
-    respondToCost,
-    assignDeveloper,
-    updateWorkflowStatus,
-    addComment
+  createRevision,
+  getRevisions,
+  listAllRevisions,
+  getRevision,
+  reviewRevision,
+  updateRevisionCost,
+  respondToCost,
+  assignDeveloper,
+  updateWorkflowStatus,
+  addComment
 };
